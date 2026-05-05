@@ -114,7 +114,7 @@
       maxOpenPolls: 0, 
       isResultsPublished: false, 
       actualDistributedCodes: '', // 記錄實際派發的選票數量
-      ballotRemark: '請於投票當日登入學校網站,掃描二維碼,並輸入提供的6位數密碼進行投票,投票結果將會投票截止後隨即公佈.',
+      ballotRemark: '請於投票當日登入學校網站,掃描二維碼,並輸入校方提供的6位數密碼進行投票,結果將會在投票截止後隨即公佈.',
       polls: [
         { id: '1', title: '2026年度最佳員工選舉', options: [{ id: 'o1', text: '陳大文' }, { id: 'o2', text: '李小明' }], maxSelect: 1, status: 'active', isVisible: true, isLocked: false },
         { id: '2', title: '公司下一季旅遊地點（多選）', options: [{ id: 'o3', text: '日本東京' }, { id: 'o4', text: '韓國首爾' }, { id: 'o5', text: '泰國曼谷' }], maxSelect: 2, status: 'active', isVisible: true, isLocked: false }
@@ -301,7 +301,7 @@
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 leading-tight">
                   <span className="font-bold text-[15px] sm:text-xl tracking-tight leading-none">馬頭涌官立小學</span>
-                  <span className="font-bold text-[15px] sm:text-xl tracking-tight leading-none mt-1 sm:mt-0">投票系統(後備)</span>
+                  <span className="font-bold text-[15px] sm:text-xl tracking-tight leading-none mt-1 sm:mt-0">投票系統</span>
                 </div>
               </div>
               <div className="flex gap-1.5 sm:gap-2 shrink-0">
@@ -362,7 +362,7 @@
                 <h2 className="text-4xl font-extrabold text-slate-800 leading-tight">
                   <span className="block pb-4">歡迎使用</span>
                   <span className="block sm:inline">馬頭涌官立小學</span>
-                  <span className="block sm:inline sm:ml-2">(投票系統)(後備)</span>
+                  <span className="block sm:inline sm:ml-2">(投票系統)</span>
                 </h2>
                 <div className="flex gap-4 pt-4">
                   <Button onClick={() => setCurrentView('admin')} className="px-8 py-4 text-lg">系統管理員</Button>
@@ -485,6 +485,8 @@
           newPolls[payload.index].isLocked = false;
           updateData({ polls: newPolls });
           showToast('已解除鎖定，可進行修改。', 'success');
+        } else if (type === 'resetPollData') {
+          handleResetPoll(payload.id);
         } else if (type === 'resetAllPolls') {
           const newCodes = voterCodes.map(c => ({ ...c, used: false, votes: {}, usedAt: null }));
           const newPolls = polls.map(p => ({ ...p, status: 'active' }));
@@ -557,8 +559,17 @@
       };
 
       const handleTogglePollStatus = (id) => {
-        const newPolls = polls.map(p => p.id === id ? { ...p, status: p.status === 'active' ? 'ended' : 'active' } : p);
-        updateData({ polls: newPolls });
+        const targetPoll = polls.find(p => p.id === id);
+        const newStatus = targetPoll.status === 'active' ? 'ended' : 'active';
+        const newPolls = polls.map(p => p.id === id ? { ...p, status: newStatus } : p);
+        
+        let updates = { polls: newPolls };
+        // 若重新開放投票主題，且整個系統狀態處於已結束，則同時喚醒系統為開放中
+        if (newStatus === 'active' && systemState === 'ended') {
+          updates.systemState = 'active';
+        }
+        
+        updateData(updates);
         showToast('投票主題狀態已更新');
       };
 
@@ -1006,7 +1017,15 @@
                           <Button variant="secondary" className="text-xs px-3 py-1.5" onClick={() => handleTogglePollStatus(poll.id)}>
                             {poll.status === 'active' ? '暫停/結束' : '重新開放'}
                           </Button>
-                          <Button variant="outline" className="text-xs px-3 py-1.5" onClick={() => handleResetPoll(poll.id)}>重設數據</Button>
+                          <Button variant="outline" className="text-xs px-3 py-1.5" onClick={() => {
+                            openModal({
+                              type: 'resetPollData',
+                              payload: { id: poll.id },
+                              title: '提示訊息',
+                              message: '重設數據會將已進行統計的數據重置,敬請留意。',
+                              requirePwd: false
+                            });
+                          }}>重設數據</Button>
                         </div>
                       </div>
                     ))}
@@ -1301,6 +1320,7 @@
       const [timeStatus, setTimeStatus] = useState('waiting'); 
       const [timeLeft, setTimeLeft] = useState(null);
       const [selections, setSelections] = useState({});
+      const [showConfirmModal, setShowConfirmModal] = useState(false);
 
       useEffect(() => {
         if (systemState !== 'active' || !endTime || !startTime) return;
@@ -1642,11 +1662,27 @@
               <Button variant="outline" onClick={handleLogout} className="text-slate-500 border-slate-200">
                 取消並登出
               </Button>
-              <Button onClick={handleSubmitVote} className="px-8 py-3 text-lg shadow-lg hover:-translate-y-0.5 transition-transform" disabled={timeStatus === 'ended' || displayPolls.length === 0}>
+              <Button onClick={() => setShowConfirmModal(true)} className="px-8 py-3 text-lg shadow-lg hover:-translate-y-0.5 transition-transform" disabled={timeStatus === 'ended' || displayPolls.length === 0}>
                 確認送出選票 <Icon name="CheckCircle2" className="w-5 h-5 ml-2" />
               </Button>
             </div>
           </div>
+
+          {showConfirmModal && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm print:hidden">
+              <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm m-4 animate-in fade-in zoom-in-95">
+                <h3 className="text-xl font-bold mb-2">提示訊息</h3>
+                <p className="text-slate-600 mb-6 text-sm">請確認投票,所選的選項將不能更改</p>
+                <div className="flex gap-3 justify-end mt-6">
+                  <Button variant="secondary" onClick={() => setShowConfirmModal(false)}>取消</Button>
+                  <Button variant="primary" onClick={() => {
+                    setShowConfirmModal(false);
+                    handleSubmitVote();
+                  }}>確認</Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
