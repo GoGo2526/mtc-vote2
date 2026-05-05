@@ -523,7 +523,8 @@
       };
 
       const handleEndVoting = () => {
-        updateData({ systemState: 'ended' });
+        const newPolls = polls.map(p => ({ ...p, status: 'ended' }));
+        updateData({ systemState: 'ended', polls: newPolls });
         showToast('投票已手動結束。');
       };
 
