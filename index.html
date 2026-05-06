@@ -222,10 +222,10 @@
         return 'home';
       });
       const [toast, setToast] = useState(null);
-      const [currentVoterCode, setCurrentVoterCode] = useState(null);
+      const [currentVoterCode, setCurrentVoterCode] = useState(() => sessionStorage.getItem('currentVoterCode') || null);
       
       // 管理員登入狀態 (null, 'admin', 'superadmin')
-      const [adminRole, setAdminRole] = useState(null);
+      const [adminRole, setAdminRole] = useState(() => sessionStorage.getItem('adminRole') || null);
       const [adminLoginInput, setAdminLoginInput] = useState('');
       
       // 追蹤上一次的強制登出金鑰
@@ -242,6 +242,17 @@
       const updateData = (updates) => {
         setAppData({ ...appData, ...updates });
       };
+
+      // 儲存登入狀態至 Session Storage 防止重新整理後登出
+      useEffect(() => {
+        if (adminRole) sessionStorage.setItem('adminRole', adminRole);
+        else sessionStorage.removeItem('adminRole');
+      }, [adminRole]);
+
+      useEffect(() => {
+        if (currentVoterCode) sessionStorage.setItem('currentVoterCode', currentVoterCode);
+        else sessionStorage.removeItem('currentVoterCode');
+      }, [currentVoterCode]);
 
       // 監聽 Firebase 權限錯誤並顯示通知
       useEffect(() => {
@@ -559,9 +570,12 @@
       };
 
       const handleTogglePollStatus = (id) => {
+        const isTimeEnded = endTime && new Date().getTime() > new Date(endTime).getTime();
+        if (isTimeEnded) {
+          return showToast('投票時間已結束，不能更改狀態。', 'error');
+        }
         const targetPoll = polls.find(p => p.id === id);
         const newStatus = targetPoll.status === 'active' ? 'ended' : 'active';
-        const newPolls = polls.map(p => p.id === id ? { ...p, status: newStatus } : p);
         
         let updates = { polls: newPolls };
         // 若重新開放投票主題，且整個系統狀態處於已結束，則同時喚醒系統為開放中
@@ -1005,17 +1019,20 @@
                     </div>
                   </div>
                   <div className="space-y-3">
-                    {polls.map(poll => (
+                    {polls.map(poll => {
+                      const isTimeEnded = endTime && new Date().getTime() > new Date(endTime).getTime();
+                      const currentDisplayStatus = (poll.status === 'active' && !isTimeEnded) ? 'active' : 'ended';
+                      return (
                       <div key={poll.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 p-4 bg-slate-50 border rounded-lg">
                         <div>
                           <div className="font-bold text-slate-800">{poll.title} {poll.isVisible === false && <span className="text-xs text-slate-400 font-normal">(已設定為隱藏)</span>}</div>
-                          <div className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full ${poll.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                            {poll.status === 'active' ? '開放中' : '已結束'}
+                          <div className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full ${currentDisplayStatus === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {currentDisplayStatus === 'active' ? '開放中' : '已結束'}
                           </div>
                         </div>
                         <div className="flex gap-2 shrink-0">
                           <Button variant="secondary" className="text-xs px-3 py-1.5" onClick={() => handleTogglePollStatus(poll.id)}>
-                            {poll.status === 'active' ? '暫停/結束' : '重新開放'}
+                            {currentDisplayStatus === 'active' ? '暫停/結束' : '重新開放'}
                           </Button>
                           <Button variant="outline" className="text-xs px-3 py-1.5" onClick={() => {
                             openModal({
@@ -1028,7 +1045,8 @@
                           }}>重設數據</Button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </Card>
               </div>
@@ -1672,7 +1690,7 @@
             <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm print:hidden">
               <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm m-4 animate-in fade-in zoom-in-95">
                 <h3 className="text-xl font-bold mb-2">提示訊息</h3>
-                <p className="text-slate-600 mb-6 text-sm">請確認投票,所選的選項將不能更改</p>
+                <p className="text-slate-600 mb-6 text-sm">請確認選票,經確認後選項將不能更改,敬請留意!</p>
                 <div className="flex gap-3 justify-end mt-6">
                   <Button variant="secondary" onClick={() => setShowConfirmModal(false)}>取消</Button>
                   <Button variant="primary" onClick={() => {
